@@ -7,6 +7,8 @@ class: center, middle
 
 # Command methods
 
+--
+
 * Usually don't return values
 
 --
@@ -34,6 +36,10 @@ class SubscriptionManager
 end
 
 class PaymentProcessor
+  def initialize(credit_card_details)
+    @credit_card_details = credit_card_details
+  end
+
   def charge
     # Charge someone some amount of money
   end
@@ -67,10 +73,14 @@ end
 # And all's good, until...
 
 --
-## Someone wants to add a trial
+## Someone wants to add a new feature
 --
 
-### How would you solve it?
+### How about a trial account
+
+--
+
+###  Given our existing code, how would you solve it?
 
 ```ruby
 class SubscriptionManager
@@ -104,7 +114,7 @@ class SubscriptionManager
   end
 end
 ```
---
+
 Passing in booleans to make decisions later tends to lead to more booleans and
 more decisions
 
@@ -128,8 +138,6 @@ sm = SubscriptionManager.new(tp, current_user)
 sm.subscribe
 ```
 
---
-
 Now we are just forcing classes to comply without a care in the world.
 
 ---
@@ -152,51 +160,140 @@ if sm.subscribe
   pp.charge
 end
 ```
---
 
 But now you have to remember to call the appropriate "charge" code everywhere
 you touch the subscription code.
 
 ---
-We start by creating a class that processes a csv
+# How would I solve it?
+
+--
 
 ```ruby
-describe CsvProcessor do
+class SubscriptionManager
+  def initialize(processor, user)
+    @processor = processor
+    @user = user
+  end
 
-  it 'should process each line of the csv string' do
+  def subscribe
+    # Do some subscribing stuff here and then charge
+    @processor.call
+  end
+end
 
-    csv_string = <<-CSV
-frank,hanford,ca
-joe,tulare,ca
-jim,bakersfield,ca
-CSV
-    processor = spy('Processor')
-    csv_processor = CsvProcessor.new(processor, csv_string)
+class PaymentProcessor
+  def initialize(credit_card_details)
+    @credit_card_details = credit_card_details
+  end
 
-    csv_processor.read
+  def call
+    # Charge someone some amount of money
+  end
+end
 
-    expect(processor).to have_received(:process).exactly(3).times
-    expect(processor).to have_received(:process).with(['frank','hanford','ca'])
-    expect(processor).to have_received(:process).with(['joe','tulare','ca'])
-    expect(processor).to have_received(:process).with(['jim','bakersfield','ca'])
+pp = PaymentProcessor.new(credit_card_details)
+sm = SubscriptionManager.new(pp, current_user)
+sm.subscribe
+```
+---
 
+# Use .call in all of my command classes
+
+* Call is a generic enough method name to be used in any class
+
+--
+
+* Now we can pass in anything that responds to call
+
+--
+
+### Like a new payment processor:
+
+```ruby
+class StripeProcessor
+  def intialize(credit_card_details)
+    @credit_card_details = credit_card_details
+  end
+
+  def call
+    Stripe::Charge.create(
+      :customer    => @credit_card_details.customer,
+      :amount      => @credit_card_details.amount,
+      :description => 'New Subscriber',
+      :currency    => 'usd')
+  end
+end
+
+pp = StripeProcessor.new(credit_card_details)
+sm = SubscriptionManager.new(pp, current_user)
+sm.subscribe
+```
+
+---
+
+# or for a trial subscriber
+
+```ruby
+class TrialProcessor
+  def call; end
+end
+
+tp = TrialProcessor.new
+sm = SubscriptionManager.new(tp, current_user)
+sm.subscribe
+```
+---
+## But wait there's more...
+--
+
+### With stabby lambdas
+
+```ruby
+sm = SubscriptionManager.new(-> { puts "I'm a stabby lambda" }, current_user)
+sm.subscribe
+# => I'm a stabby lambda
+```
+--
+### or with regular lambdas
+```ruby
+sm = SubscriptionManager.new(lambda { puts "I'm a lambda" }, current_user)
+sm.subscribe
+# => I'm a regular lambda
+```
+--
+
+### or with procs
+```ruby
+sm = SubscriptionManager.new(proc { puts "I'm a proc" }, current_user)
+sm.subscribe
+# => I'm a proc
+```
+---
+class: center, middle
+
+# All of these respond to the call method
+
+---
+## and we can remove mocks from our tests
+
+```ruby
+describe SubscriptionManager do
+  it 'should subscribe the user to our service and charge them' do
+    value = 0
+    pp = -> { value = 42 }
+    user = create(:user)
+    sm = SubscriptionManager.new(pp, user)
+
+    sm.subscribe
+
+    # Expect some subscription stuff
+    expect(value).to eq(42)
   end
 end
 ```
 ---
 
-```ruby
-class CsvProcessor
-  def initialize(processor, csv_string)
-    @processor = processor
-    @csv_string = csv_string
-  end
+class: center, middle
 
-  def read
-    CSV.parse(@csv_string) do |row|
-      @processor.process row
-    end
-  end
-end
-```
-
+# Thank you
